@@ -1,0 +1,154 @@
+=== DEVICE CONFIGURATION: HPE Aruba Single ===
+! ===== SECTION: Basic Device Identity and Security Hardening =====
+hostname BranchOffice-Gateway
+aaa authentication ssh login local
+aaa authentication telnet login local
+aaa authentication enable default enable
+enable secret 9 [encrypted-strong-hash]
+ip ssh version 2
+ip ssh timeout 60
+ip ssh authentication-retries 3
+snmp-server community "public" RO
+snmp-server enable traps
+logging host 10.0.0.100
+logging trap informational
+ntp server 10.0.0.200 key 1
+! ===== END SECTION =====
+
+! ===== SECTION: Enterprise Security Baseline and Hardening =====
+ip access-list extended ACL-SECURITY
+ permit ip any any
+!
+aaa new-model
+!
+ip access-list extended ACL-VOIP
+ permit udp any any eq 5060
+ permit tcp any any eq 5060
+ permit udp any any eq 5061
+ permit tcp any any eq 5061
+!
+ip access-list extended ACL-ADMIN
+ permit ip host 192.168.1.1 any
+ permit ip host 192.168.1.2 any
+!
+! Role-based access control
+username admin privilege 15 secret 9 [admin-hash]
+!
+! Enable intrusion prevention system (IPS)
+ips signature-definition
+  signature-sets
+    default
+  exit
+!
+! Enable application control and web filtering
+web-content-filtering enable
+application-control enable
+!
+! Enable DDoS protection and traffic rate limiting
+ip access-list extended ACL-DDoS
+ permit tcp any any established
+ permit udp any any
+!
+! Secure management access
+line vty 0 4
+ transport input ssh
+ login local
+!
+! Enable secure protocols only
+ip http secure-server
+ip https secure-server
+!
+! Enable logging for security auditing
+logging buffered 65536
+! ===== END SECTION =====
+
+! ===== SECTION: Site-to-Site VPN Configuration =====
+crypto ikev2 proposal IKEV2-PROPOSAL
+ encryption aes-256
+ integrity sha256
+ group 14
+!
+crypto ikev2 policy IKEV2-POLICY
+ proposal IKEV2-PROPOSAL
+!
+crypto ikev2 keyring HQ-KEYRING
+ peer vpn.hq.company.com
+  address 203.0.113.1
+  pre-shared-key 0 [pre-shared-key]
+!
+crypto ikev2 profile HQ-VPN-PROFILE
+ match identity hostname vpn.hq.company.com
+ authentication remote pre-shared-key
+ authentication local pre-shared-key
+ keyring local HQ-KEYRING
+!
+crypto ipsec transform-set IPSEC-TRANSFORM esp-aes-256 esp-sha-hmac
+ mode tunnel
+!
+crypto ipsec profile HQ-IPSEC-PROFILE
+ set transform-set IPSEC-TRANSFORM
+ set ikev2-profile HQ-VPN-PROFILE
+!
+interface Tunnel1
+ ip address 10.255.255.1 255.255.255.252
+ tunnel source GigabitEthernet0/1
+ tunnel mode ipsec ipv4
+ tunnel protection ipsec profile HQ-IPSEC-PROFILE
+!
+! Route to HQ network via VPN
+ip route 10.0.0.0 255.255.255.0 Tunnel1
+! ===== END SECTION =====
+
+! ===== SECTION: VLANs and LAN Segments =====
+vlan 1
+ name "LAN"
+ ip address 192.168.1.1 255.255.255.0
+!
+vlan 100
+ name "Guest_Network"
+ ip address 192.168.100.1 255.255.255.0
+!
+! Assign interfaces to VLANs
+interface GigabitEthernet0/2
+ switchport mode access
+ switchport access vlan 1
+!
+interface GigabitEthernet0/3
+ switchport mode access
+ switchport access vlan 100
+!
+! Enable VLAN routing
+ip routing
+! ===== END SECTION =====
+
+! ===== SECTION: Bandwidth Management and QoS =====
+class-map match-all VOIP
+ match ip dscp ef
+class-map match-all CRITICAL-APPS
+ match ip dscp cs5
+!
+policy-map QoS-POLICY
+ class VOIP
+  priority 512
+ class CRITICAL-APPS
+  bandwidth remaining percent 30
+ class class-default
+  fair-queue
+!
+interface GigabitEthernet0/1
+ service-policy output QoS-POLICY
+!
+interface GigabitEthernet0/2
+!
+interface GigabitEthernet0/3
+! ===== END SECTION =====
+
+! ===== SECTION: Monitoring, Logging, and Compliance =====
+ip flow-export version 9
+ip flow-export destination 10.0.0.100 2055
+!
+! Enable detailed logging for compliance and audit
+!
+! Save configuration
+write memory
+! ===== END SECTION =====
